@@ -41,8 +41,10 @@ train_set="train"
 train_dev="dev"
 test_set="test"
 
-wavdir=${YOLOXOCHITL_MIXTEC}/Yoloxochitl-Mixtec-for-ASR/Sound-files-Narratives-for-ASR
-annodir=${YOLOXOCHITL_MIXTEC}/Yoloxochitl-Mixtec-for-ASR/Transcriptions-for-ASR/ELAN-files-with-underlying-and-surface-tiers
+#wavdir=${YOLOXOCHITL_MIXTEC}/Yoloxochitl-Mixtec-for-ASR/Sound-files-Narratives-for-ASR
+#annodir=${YOLOXOCHITL_MIXTEC}/Yoloxochitl-Mixtec-for-ASR/Transcriptions-for-ASR/ELAN-files-with-underlying-and-surface-tiers
+wavdir=${YOLOXOCHITL_MIXTEC}/Audio/Yoloxochitl
+annodir=${YOLOXOCHITL_MIXTEC}/elan
 
 log "data preparation started"
 

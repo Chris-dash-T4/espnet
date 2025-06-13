@@ -17,8 +17,9 @@ inference_config=conf/decode_asr.yaml
     --stage 1 \
     --stop_stage 100 \
     --ngpu 1 \
-    --nj 40 \
-    --inference_nj 40 \
+    --gpu_inference true \
+    --nj 5 \
+    --inference_nj 5 \
     --use_lm true \
     --token_type bpe \
     --nbpe 500 \

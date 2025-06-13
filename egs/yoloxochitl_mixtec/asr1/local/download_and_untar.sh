@@ -72,10 +72,28 @@ fi
 
 cd $data
 
-if ! tar -xzf $filename; then
-  echo "$0: error un-tarring archive $filepath"
-  exit 1;
-fi
+FILE_TYPE=$(file --mime-type -b "$filename")
+
+case "$FILE_TYPE" in
+    application/x-tar)
+        echo "Extracting tar archive..."
+        if ! tar -xf $filename; then
+          echo "$0: error un-tarring archive $filepath"
+          exit 1;
+        fi
+        ;;
+    application/gzip)
+        echo "Extracting tar.gz archive..."
+        if ! tar -xzf $filename; then
+          echo "$0: error un-tarring archive $filepath"
+          exit 1;
+        fi
+        ;;
+    *)
+        echo "$0: error un-tarring archive $filepath (unrecognized file type: $FILE_TYPE)"
+        exit 1
+        ;;
+esac
 
 cd $workspace
 
