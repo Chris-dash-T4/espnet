@@ -250,7 +250,7 @@ def ELANProcess(afile, spk_info, spk_details, text_format):
         return None
     #time_order = {id:float(millis) / 1000 for id, millis in elan_content.timeslots.items()}
     tiers = chain(
-                elan_content.get_tier_ids_for_linguistic_type("Transcripción"), 
+                elan_content.get_tier_ids_for_linguistic_type("Transcripción"),
                 elan_content.get_tier_ids_for_linguistic_type("Transcription"),
                 elan_content.get_tier_ids_for_linguistic_type("UtteranceType")
                 )

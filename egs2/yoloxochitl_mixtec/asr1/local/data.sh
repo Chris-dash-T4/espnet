@@ -58,7 +58,7 @@ fi
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     log "stage2: Preparing data for yoloxochitl_mixtec"
     python3 local/data_prep.py -w $wavdir -a $annodir -t data/${annotation_id} \
-                              -m ${annotation_type} -i local/speaker_wav_mapping_mixtec_remove_reserve.csv \
+                              -m ${annotation_type} -i local/speaker_wav_mapping_v2.csv \
                               -f ${text_format}
     chmod +x data/${annotation_id}/remix_script.sh
     mkdir -p remixed
