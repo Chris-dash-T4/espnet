@@ -31,7 +31,7 @@ gen_eval=0 # please not generate eval before release of mixer 6 eval
 
 # DIARIZATION config
 diarization_backend=pyannote
-pyannote_access_token=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 # will remove after the challenge.
+pyannote_access_token=hf_EXPUNGED # will remove after the challenge.
 # inference
 diarization_dir=exp/diarization
 diar_inf_dset="dev"
