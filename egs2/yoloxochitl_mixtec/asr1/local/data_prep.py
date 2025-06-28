@@ -7,6 +7,7 @@ import string
 import sys
 from argparse import ArgumentParser
 from xml.dom.minidom import parse
+from itertools import chain
 
 import soundfile as sf
 
@@ -20,7 +21,7 @@ delset = delset.replace("'", "")
 
 
 def TextRefine(text, text_format):
-    text = re.sub(r"\.\.\.|\*|\[.*?\]", "", text.upper())
+    text = re.sub(r"…|\.\.\.|\*|\[.*?\]", "", text.upper())
     delset_specific = delset
     if text_format == "underlying_full":
         remove_clear = "()=-"
@@ -218,58 +219,76 @@ def TimeOrderProcess(time_order_dom):
     return time_order
 
 
+def normalize_text(text : str):
+    text = text.lower()
+    text = text.replace('¹', '1')
+    text = text.replace('²', '2')
+    text = text.replace('³', '3')
+    text = text.replace('⁴', '4')
+    text = text.replace('⁽', '(')
+    text = text.replace('⁾', ')')
+    text = text.replace('...', '…')
+    # Normalize code switching to single-word tokens
+    # ie. <i>palabras españolas</i> -> palabras españolas
+    italic = chain(re.finditer(r'<i>([^<]+)</?i/?>', text), re.finditer(r'\*([^*]+)\*\*', text))
+    for match in italic:
+        # Strip all italics for now
+        # TODO enable toggle for italicizing code-switched words
+        text = text.replace(match.group(0), match.group(1))
+    text = re.sub(r'<i>([^<]+)$', r'\1', text)
+    text = re.sub(r'^([^<]+)</i>', r'\1', text)
+    assert '<i>' not in text, f'<i> found in "{text}"'
+    return text.lower()
+
 def ELANProcess(afile, spk_info, spk_details, text_format):
+    from pympi import Elan
+
     try:
-        elan_content = parse(afile).documentElement
+        elan_content = Elan.Eaf(afile)
     except Exception:
         print("encoding failed  %s" % afile)
         return None
-    time_order = TimeOrderProcess(elan_content.getElementsByTagName("TIME_ORDER")[0])
-    tiers = elan_content.getElementsByTagName("TIER")
+    #time_order = {id:float(millis) / 1000 for id, millis in elan_content.timeslots.items()}
+    tiers = chain(
+                elan_content.get_tier_ids_for_linguistic_type("Transcripción"), 
+                elan_content.get_tier_ids_for_linguistic_type("Transcription"),
+                elan_content.get_tier_ids_for_linguistic_type("UtteranceType")
+                )
     channels = ([], [])
     for tier in tiers:
-        if tier.getAttribute("LINGUISTIC_TYPE_REF") not in [
-            "UtteranceType",
-            "Transcription",
-        ]:
-            # only consider pure caption
-            continue
         try:
-            spk_name = " ".join(tier.getAttribute("TIER_ID").strip().split())
+            spk_name = " ".join(tier.strip().split())
             if text_format == "surface":
-                if "SURFACE" not in spk_name:
+                if "SURFACE" not in spk_name.upper():
+                    continue
+                if "G3" in spk_name.upper():
                     continue
                 code = spk_details[spk_name[:-9]]
             else:
-                if "SURFACE" in spk_name:
+                if "SURFACE" in spk_name.upper():
+                    continue
+                if "G3" in spk_name.upper():
                     continue
                 code = spk_details[spk_name]
         except Exception:
-            print("error speaker: %s" % tier.getAttribute("TIER_ID").strip())
+            print("error speaker: %s" % tier.strip())
             continue
         if code not in spk_info:
+            print("Unknown speaker code:", code)
+            print("Available codes:", spk_info)
             continue
         channel = channels[spk_info.index(code)]
-        annotations = tier.getElementsByTagName("ANNOTATION")
-        for anno in annotations:
-            info = anno.getElementsByTagName("ALIGNABLE_ANNOTATION")[0]
-            start = time_order[info.getAttribute("TIME_SLOT_REF1")]
-            end = time_order[info.getAttribute("TIME_SLOT_REF2")]
-            text = ""
-            childs = info.getElementsByTagName("ANNOTATION_VALUE")[0].childNodes
-            for child in childs:
-                if child.firstChild is not None:
-                    continue
-                    text += child.firstChild.data
-                else:
-                    text += child.data
+        annotations = elan_content.get_annotation_data_for_tier(tier)
+        for start, end, anno in annotations:
+            text = normalize_text(anno)
             text = TextRefine(text, text_format)
             text = text.translate(trantab)
             if len(text) < 1:
                 continue
             if start == end:
                 continue
-            channel.append([start, end, text])
+            # NB: Elan time is in milliseconds, convert to seconds
+            channel.append([start / 1000, end / 1000, text])
     return channels
 
 
@@ -392,13 +411,16 @@ def TraverseData(
     else:
         wav_spk_info = LoadWavSpeakerInfo(speaker_info)
         spk_details = LoadSpeakerDetails(speaker_details)
-        for root, dirs, files in os.walk(sound_dir):
+        print("Speaker details:", spk_details)
+        print("Sound files:", sound_dir)
+        print("Elan files:", annotation_dir)
+        for root, dirs, files in os.walk(sound_dir, followlinks=True):
             for file in files:
                 if file[-4:] == ".wav":
                     sound_files[ExtractAudioID(file, wav_spk_info)] = os.path.join(
                         root, file
                     )
-        for root, dirs, files in os.walk(annotation_dir):
+        for root, dirs, files in os.walk(annotation_dir, followlinks=True):
             for file in files:
                 if file[-4:] == ".eaf":
                     annotation_files[ExtractAudioID(file, wav_spk_info)] = os.path.join(
@@ -413,6 +435,7 @@ def TraverseData(
             if segment_info is None:
                 continue
             left_channel_segments, right_channel_segments = segment_info
+            print(f"Left channel: {len(left_channel_segments)}, Right channel: {len(right_channel_segments)}")
 
             f = sf.SoundFile(sound_files[afile])
             max_length = len(f) / f.samplerate
@@ -435,6 +458,7 @@ def TraverseData(
                     PackZero(segment_number),
                 )
                 if float(segment[1]) > max_length:
+                    print("Segment too long", segment, max_length, file=sys.stderr)
                     continue
                 print(
                     "%s %s-L %s %s" % (segment_id, afile, segment[0], segment[1]),
@@ -442,6 +466,7 @@ def TraverseData(
                 )
                 print("%s %s" % (segment_id, spk_info[0]), file=utt2spk)
                 print("%s %s" % (segment_id, segment[2]), file=text)
+                print("OUTPUT to text: %s %s" % (segment_id, segment[2]), file=sys.stderr)
                 spk2utt_prep[spk_info[0]] = spk2utt_prep.get(
                     spk_info[0], ""
                 ) + " %s" % (segment_id)
