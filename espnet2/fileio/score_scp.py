@@ -4,14 +4,18 @@ from pathlib import Path
 from typing import Union
 
 import numpy as np
-from typeguard import check_argument_types
+from typeguard import typechecked
 
 from espnet2.fileio.read_text import read_2columns_text
 
 try:
     import music21 as m21  # for CI import
-except ImportError or ModuleNotFoundError:
+except (ImportError, ModuleNotFoundError):
     m21 = None
+try:
+    import miditoolkit  # for CI import
+except (ImportError, ModuleNotFoundError):
+    miditoolkit = None
 
 
 class NOTE(object):
@@ -33,15 +37,15 @@ class XMLReader(collections.abc.Mapping):
         ...
 
         >>> reader = XMLScpReader('xml.scp')
-        >>> lyrics_array, notes_array, segs_array = reader['key1']
+        >>> tempo, note_list = reader['key1']
     """
 
+    @typechecked
     def __init__(
         self,
-        fname,
-        dtype=np.int16,
+        fname: Union[Path, str],
+        dtype: type = np.int16,
     ):
-        assert check_argument_types()
         assert m21 is not None, (
             "Cannot load music21 package. ",
             "Please install Muskit modules via ",
@@ -54,7 +58,16 @@ class XMLReader(collections.abc.Mapping):
     def __getitem__(self, key):
         score = m21.converter.parse(self.data[key])
         m = score.metronomeMarkBoundaries()
-        tempo = int(m[0][2].number)
+
+        # NOTE(Yuxun): tempo with '(playback only)' returns None in item[2].number
+        tempo = None
+        for item in m:
+            tempo_number = item[2].number
+            if tempo_number is not None:
+                tempo = tempo_number
+                break
+        tempo = int(tempo)
+
         part = score.parts[0].flat
         notes_list = []
         prepitch = -1
@@ -68,8 +81,8 @@ class XMLReader(collections.abc.Mapping):
                         if n.pitch.midi != prepitch:  # Ignore repeat note
                             note = n
                             break
-                if lr is None or lr == "":  # multi note in one syllable
-                    if note.pitch.midi == prepitch:  # same pitch
+                if lr is None or lr == "" or lr == "ー":  # multi note in one syllable
+                    if note.pitch.midi == prepitch or prepitch == 0:  # same pitch
                         notes_list[-1].et += dur
                     else:  # different pitch
                         notes_list.append(NOTE("—", note.pitch.midi, st, st + dur))
@@ -79,12 +92,20 @@ class XMLReader(collections.abc.Mapping):
                     else:
                         notes_list.append(NOTE("P", 0, st, st + dur))
                     prepitch = 0
+                    st += dur
+                    continue
                 else:  # normal note for one syllable
-                    notes_list.append(NOTE(note.lyric, note.pitch.midi, st, st + dur))
+                    notes_list.append(NOTE(lr, note.pitch.midi, st, st + dur))
                 prepitch = note.pitch.midi
-                for arti in note.articulations:  # <br> is tagged as a notation
-                    if arti.name in ["breath mark"]:  # up-bow?
-                        notes_list.append(NOTE("B", 0, st, st))  # , 0))
+                for arti in note.articulations:
+                    # NOTE(Yuning): By default, 'breath mark' appears at the end of
+                    # the sentence. In some situations, 'breath mark' doesn't take
+                    # effect in its belonging note. Please handle them under local/.
+                    if arti.name in ["breath mark"]:  # <br> is tagged as a notation
+                        notes_list.append(NOTE("B", 0, st + dur, st + dur))
+                    # NOTE(Yuning): In some datasets, there is a break when 'staccato'
+                    # occurs. We let users to decide whether to perform segmentation
+                    # under local/.
             else:  # rest note
                 if prepitch == 0:
                     notes_list[-1].et += dur
@@ -129,12 +150,12 @@ class XMLWriter:
 
     """
 
+    @typechecked
     def __init__(
         self,
         outdir: Union[Path, str],
         scpfile: Union[Path, str],
     ):
-        assert check_argument_types()
         self.dir = Path(outdir)
         self.dir.mkdir(parents=True, exist_ok=True)
         scpfile = Path(scpfile)
@@ -159,7 +180,7 @@ class XMLWriter:
             duration = 1.0 * duration / 8
             if duration == 0:
                 duration = 1 / 16
-            if notes_seq[i] != -1:  # isNote
+            if notes_seq[i] != 0:  # isNote
                 n = m21.note.Note(notes_seq[i])
                 if lyrics_seq[i] != "—":
                     n.lyric = lyrics_seq[i]
@@ -186,6 +207,77 @@ class XMLWriter:
         self.fscp.close()
 
 
+class MIDReader(collections.abc.Mapping):
+    """Reader class for 'mid.scp'.
+
+    Examples:
+        key1 /some/path/a.mid
+        key2 /some/path/b.mid
+        key3 /some/path/c.mid
+        key4 /some/path/d.mid
+        ...
+
+        >>> reader = XMLScpReader('mid.scp')
+        >>> tempo, note_list = reader['key1']
+    """
+
+    @typechecked
+    def __init__(
+        self,
+        fname: Union[Path, str],
+        add_rest: bool = True,
+        dtype: type = np.int16,
+    ):
+        assert miditoolkit is not None, (
+            "Cannot load miditoolkit package. ",
+            "Please install Muskit modules via ",
+            "(cd tools && make muskit.done)",
+        )
+        self.fname = fname
+        self.dtype = dtype
+        self.add_rest = add_rest  # add rest into note sequencee
+        self.data = read_2columns_text(fname)  # get key-value dict
+
+    def __getitem__(self, key):
+        midi_obj = miditoolkit.midi.parser.MidiFile(self.data[key])
+        # load tempo
+        tempos = midi_obj.tempo_changes
+        tempos.sort(key=lambda x: (x.time, x.tempo))
+        assert len(tempos) == 1
+        tempo = int(tempos[0].tempo + 0.5)
+        # load pitch time sequence
+        tick_to_time = midi_obj.get_tick_to_time_mapping()
+        notes = midi_obj.instruments[0].notes
+        notes.sort(key=lambda x: (x.start, x.pitch))
+        notes_list = []
+        pre_et = 0
+        for note in notes:
+            st = tick_to_time[note.start]
+            et = tick_to_time[note.end]
+            # NOTE(Yuning): MIDIs don't have explicit rest notes.
+            # Explicit rest notes might be needed for stage 1 in svs.
+            if st != pre_et and self.add_rest:
+                notes_list.append(NOTE("P", 0, pre_et, st))
+            notes_list.append(NOTE("*", note.pitch, st, et))
+            pre_et = et
+        return tempo, notes_list
+
+    def get_path(self, key):
+        return self.data[key]
+
+    def __contains__(self, item):
+        return item
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def keys(self):
+        return self.data.keys()
+
+
 class SingingScoreReader(collections.abc.Mapping):
     """Reader class for 'score.scp'.
 
@@ -201,12 +293,12 @@ class SingingScoreReader(collections.abc.Mapping):
 
     """
 
+    @typechecked
     def __init__(
         self,
-        fname,
-        dtype=np.int16,
+        fname: Union[Path, str],
+        dtype: type = np.int16,
     ):
-        assert check_argument_types()
         self.fname = fname
         self.dtype = dtype
         self.data = read_2columns_text(fname)
@@ -248,12 +340,12 @@ class SingingScoreWriter:
 
     """
 
+    @typechecked
     def __init__(
         self,
         outdir: Union[Path, str],
         scpfile: Union[Path, str],
     ):
-        assert check_argument_types()
         self.dir = Path(outdir)
         self.dir.mkdir(parents=True, exist_ok=True)
         scpfile = Path(scpfile)

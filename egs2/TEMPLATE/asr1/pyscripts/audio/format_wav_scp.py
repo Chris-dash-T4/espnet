@@ -11,7 +11,7 @@ import numpy as np
 import resampy
 import soundfile
 from tqdm import tqdm
-from typeguard import check_argument_types
+from typeguard import typechecked
 
 from espnet2.fileio.read_text import read_2columns_text
 from espnet2.fileio.sound_scp import SoundScpWriter, soundfile_read
@@ -26,6 +26,7 @@ def humanfriendly_or_none(value: str):
     return humanfriendly.parse_size(value)
 
 
+@typechecked
 def str2int_tuple(integers: str) -> Optional[Tuple[int, ...]]:
     """
 
@@ -33,16 +34,15 @@ def str2int_tuple(integers: str) -> Optional[Tuple[int, ...]]:
     (3, 4, 5)
 
     """
-    assert check_argument_types()
     if integers.strip() in ("none", "None", "NONE", "null", "Null", "NULL"):
         return None
     return tuple(map(int, integers.strip().split(",")))
 
 
+@typechecked
 def vad_trim(vad_reader: VADScpReader, uttid: str, wav: np.array, fs: int) -> np.array:
     # Conduct trim wtih vad information
 
-    assert check_argument_types()
     assert uttid in vad_reader, uttid
 
     vad_info = vad_reader[uttid]
@@ -72,8 +72,8 @@ class SegmentsExtractor:
             "e.g. call-861225-A-0050-0065 call-861225-A 5.0 6.5\n"
     """
 
+    @typechecked
     def __init__(self, fname: str, segments: str = None, multi_columns: bool = False):
-        assert check_argument_types()
         self.wav_scp = fname
         self.multi_columns = multi_columns
         self.wav_dict = {}
@@ -106,9 +106,8 @@ class SegmentsExtractor:
 
         cached = {}
         for utt, (recodeid, st, et) in self.segments_dict.items():
+            wavpath = self.wav_dict[recodeid]
             if recodeid not in cached:
-                wavpath = self.wav_dict[recodeid]
-
                 if wavpath.endswith("|"):
                     if self.multi_columns:
                         raise RuntimeError(
@@ -117,37 +116,33 @@ class SegmentsExtractor:
                     # Streaming input e.g. cat a.wav |
                     with kaldiio.open_like_kaldi(wavpath, "rb") as f:
                         with BytesIO(f.read()) as g:
-                            retval = soundfile.read(g)
+                            array, rate = soundfile.read(g)
+
                 else:
                     if self.multi_columns:
-                        retval = soundfile_read(
+                        array, rate = soundfile_read(
                             wavs=wavpath.split(),
                             dtype=None,
                             always_2d=False,
                             concat_axis=1,
                         )
                     else:
-                        retval = soundfile.read(wavpath)
+                        array, rate = soundfile.read(wavpath)
+                cached[recodeid] = array, rate
 
-                cached[recodeid] = retval
-
+            array, rate = cached[recodeid]
             # Keep array until the last query
             recodeid_counter[recodeid] -= 1
             if recodeid_counter[recodeid] == 0:
                 cached.pop(recodeid)
+            # Convert starting time of the segment to corresponding sample number.
+            # If end time is -1 then use the whole file starting from start time.
+            if et != -1:
+                array = array[int(st * rate) : int(et * rate)]
+            else:
+                array = array[int(st * rate) :]
 
-            yield utt, self._return(retval, st, et), None, None
-
-    def _return(self, array, st, et):
-        if isinstance(array, (tuple, list)):
-            array, rate = array
-
-        # Convert starting time of the segment to corresponding sample number.
-        # If end time is -1 then use the whole file starting from start time.
-        if et != -1:
-            return array[int(st * rate) : int(et * rate)], rate
-        else:
-            return array[int(st * rate) :], rate
+            yield utt, (array, rate), None, None
 
 
 def main():
@@ -283,6 +278,7 @@ def main():
                                 dtype=None,
                                 always_2d=False,
                                 concat_axis=1,
+                                return_subtype=True,
                             )
                         else:
                             with soundfile.SoundFile(wavpath) as sf:

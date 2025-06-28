@@ -1,10 +1,10 @@
 import collections.abc
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import soundfile
-from typeguard import check_argument_types
+from typeguard import typechecked
 
 from espnet2.fileio.read_text import read_2columns_text, read_multi_columns_text
 
@@ -14,6 +14,9 @@ def soundfile_read(
     dtype=None,
     always_2d: bool = False,
     concat_axis: int = 1,
+    start: int = 0,
+    end: int = None,
+    return_subtype: bool = False,
 ) -> Tuple[np.array, int]:
     if isinstance(wavs, str):
         wavs = [wavs]
@@ -24,11 +27,19 @@ def soundfile_read(
     prev_wav = None
     for wav in wavs:
         with soundfile.SoundFile(wav) as f:
-            # for supporting half-precision training
-            if dtype == "float16":
-                array = f.read(dtype="float32", always_2d=always_2d).astype(dtype)
+            f.seek(start)
+            if end is not None:
+                frames = end - start
             else:
-                array = f.read(dtype=dtype, always_2d=always_2d)
+                frames = -1
+            if dtype == "float16":
+                array = f.read(
+                    frames,
+                    dtype="float32",
+                    always_2d=always_2d,
+                ).astype(dtype)
+            else:
+                array = f.read(frames, dtype=dtype, always_2d=always_2d)
             rate = f.samplerate
             subtype = f.subtype
             subtypes.append(subtype)
@@ -61,7 +72,10 @@ def soundfile_read(
     else:
         array = np.concatenate(arrays, axis=concat_axis)
 
-    return array, rate, subtypes
+    if return_subtype:
+        return array, rate, subtypes
+    else:
+        return array, rate
 
 
 class SoundScpReader(collections.abc.Mapping):
@@ -101,6 +115,7 @@ class SoundScpReader(collections.abc.Mapping):
         but it increases the required amount of memory.
     """
 
+    @typechecked
     def __init__(
         self,
         fname,
@@ -109,7 +124,6 @@ class SoundScpReader(collections.abc.Mapping):
         multi_columns: bool = False,
         concat_axis=1,
     ):
-        assert check_argument_types()
         self.fname = fname
         self.dtype = dtype
         self.always_2d = always_2d
@@ -124,7 +138,7 @@ class SoundScpReader(collections.abc.Mapping):
     def __getitem__(self, key) -> Tuple[int, np.ndarray]:
         wavs = self.data[key]
 
-        array, rate, _ = soundfile_read(
+        array, rate = soundfile_read(
             wavs,
             dtype=self.dtype,
             always_2d=self.always_2d,
@@ -183,6 +197,7 @@ class SoundScpWriter:
 
     """
 
+    @typechecked
     def __init__(
         self,
         outdir: Union[Path, str],
@@ -191,9 +206,8 @@ class SoundScpWriter:
         multi_columns: bool = False,
         output_name_format: str = "{key}.{audio_format}",
         output_name_format_multi_columns: str = "{key}-CH{channel}.{audio_format}",
-        subtype: str = None,
+        subtype: Optional[str] = None,
     ):
-        assert check_argument_types()
         self.dir = Path(outdir)
         self.dir.mkdir(parents=True, exist_ok=True)
         scpfile = Path(scpfile)
