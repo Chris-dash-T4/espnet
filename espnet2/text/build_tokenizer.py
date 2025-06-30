@@ -10,6 +10,7 @@ from espnet2.text.phoneme_tokenizer import PhonemeTokenizer
 from espnet2.text.sentencepiece_tokenizer import SentencepiecesTokenizer
 from espnet2.text.whisper_tokenizer import OpenAIWhisperTokenizer
 from espnet2.text.word_tokenizer import WordTokenizer
+from espnet2.text.segmel_tokenizer import SegmentAndMelodyTokenizer
 
 
 @typechecked
@@ -86,6 +87,13 @@ def build_tokenizer(
             task=whisper_task or "transcribe",
             added_tokens_txt=non_linguistic_symbols,
             sot=sot_asr,
+        )
+
+    elif token_type == "segmel":
+        return SegmentAndMelodyTokenizer(
+            non_linguistic_symbols=non_linguistic_symbols,
+            space_symbol=space_symbol,
+            remove_non_linguistic_symbols=remove_non_linguistic_symbols,
         )
 
     else:

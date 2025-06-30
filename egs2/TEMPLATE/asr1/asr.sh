@@ -418,6 +418,9 @@ elif [ "${token_type}" = whisper_multilingual ]; then
 elif [ "${token_type}" = hugging_face ]; then
     token_list="${hugging_face_token_list}"
     bpemodel=${hugging_face_model_name_or_path}
+elif [ "${token_type}" = segmel ]; then
+    token_list="${token_listdir}/segmel/tokens.txt"
+    bpemodel=none
 else
     log "Error: not supported --token_type '${token_type}'"
     exit 2
@@ -950,6 +953,39 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
                 cp ${token_list} ${token_list}".duplicated"
                 awk '!seen[$0]++' ${token_list}".duplicated" > ${token_list}
                 rm ${token_list}".duplicated"
+    elif [ "${token_type}" = segmel ]; then
+        log "Stage 5: Generate segment+melody word level token_list from ${lm_train_text}"
+
+        _opts="--non_linguistic_symbols ${nlsyms_txt}"
+
+        if ${sot_asr} && [ "${token_type}" = char ]; then
+            # For SOT training, we add <sc> as an user-defined modeling unit.
+            # The input text may be `text^1 <sc> text^2 <sc> text^3`, where `text^n`
+            # refers to the transcription of `speaker n`.
+            # The order of different texts is determined by their start times.
+            _opts+=" --add_nonsplit_symbol <sc>:2 "
+        fi
+
+        # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
+        # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
+        ${python} -m espnet2.bin.tokenize_text  \
+            --token_type "${token_type}" \
+            --input "${data_feats}/lm_train.txt" --output "${token_list}" ${_opts} \
+            --field 2- \
+            --cleaner "${cleaner}" \
+            --g2p "${g2p}" \
+            --write_vocabulary true \
+            --add_symbol "${blank}:0" \
+            --add_symbol "${oov}:1" \
+            --add_symbol "${sos_eos}:-1"
+
+            # Duplicated <sc> token may be counted for char token type,
+            # so we shoud remove it
+            if ${sot_asr} && [ "${token_type}" = char ]; then
+                cp ${token_list} ${token_list}".duplicated"
+                awk '!seen[$0]++' ${token_list}".duplicated" > ${token_list}
+                rm ${token_list}".duplicated"
+            fi
             fi
     elif grep -q "whisper" <<< ${token_type}; then
         log "Stage 5: Generate whisper token_list from ${token_type} tokenizer"
