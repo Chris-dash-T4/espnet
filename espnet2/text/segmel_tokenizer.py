@@ -63,7 +63,7 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
                         # Spanish word
                         ling = re.search(r"([A-ZÑÁÍÚÉÓÜ']+)", s)
                         if ling is None and s not in self.non_linguistic_symbols:
-                            print("ERROR in token", s, f'{bytes(s,'utf-8')}')
+                            print("ERROR in token", s, f"{bytes(s,'utf-8')}")
                             continue
                         segs.append(ling.group(1))
                     elif s.endswith('-'):
@@ -74,7 +74,7 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
 
                     tokens.append(seg_token)
                     if mel_token != '': tokens.append(mel_token)
-            
+
             punctuation = re.findall(f"[{re.escape(''.join(self.non_linguistic_symbols))}]", t)
             if len(punctuation) > 0 and not self.remove_non_linguistic_symbols:
                 for p in punctuation:

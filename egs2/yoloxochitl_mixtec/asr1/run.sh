@@ -21,8 +21,8 @@ inference_config=conf/decode_asr.yaml
     --nj 5 \
     --inference_nj 5 \
     --use_lm true \
-    --token_type bpe \
-    --nbpe 500 \
+    --token_type segmel \
+    --nlsyms_txt "local/nlsyms.txt" \
     --feats_type raw \
     --asr_config "${asr_config}" \
     --inference_config "${inference_config}" \

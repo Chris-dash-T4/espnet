@@ -91,8 +91,8 @@ def build_tokenizer(
 
     elif token_type == "segmel":
         return SegmentAndMelodyTokenizer(
+            delimiter=delimiter,
             non_linguistic_symbols=non_linguistic_symbols,
-            space_symbol=space_symbol,
             remove_non_linguistic_symbols=remove_non_linguistic_symbols,
         )
 

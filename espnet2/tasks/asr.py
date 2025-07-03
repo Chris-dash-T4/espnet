@@ -326,6 +326,7 @@ class ASRTask(AbsTask):
                 "hugging_face",
                 "whisper_en",
                 "whisper_multilingual",
+                "segmel",
             ],
             help="The text will be tokenized " "in the specified level token",
         )

@@ -428,6 +428,9 @@ fi
 if ${use_word_lm}; then
     log "Error: Word LM is not supported yet"
     exit 2
+    #log "Using word LM with token type ${token_type}"
+    #lm_token_list="${token_list}"
+    #lm_token_type="word"
 else
     lm_token_list="${token_list}"
     lm_token_type="${token_type}"
@@ -473,6 +476,8 @@ if [ -z "${lm_tag}" ]; then
     fi
     if [ "${lm_token_type}" = bpe ]; then
         lm_tag+="${nbpe}"
+    elif [ "${lm_token_type}" != "${token_type}" ]; then
+        lm_tag+="_${token_type}"
     fi
     # Add overwritten arg's info
     if [ -n "${lm_args}" ]; then
@@ -505,6 +510,8 @@ if [ -z "${lm_stats_dir}" ]; then
     fi
     if [ "${lm_token_type}" = bpe ]; then
         lm_stats_dir+="${nbpe}"
+    elif [ "${lm_token_type}" != "${token_type}" ]; then
+        lm_stats_dir+="_${token_type}"
     fi
 fi
 # The directory used for training commands
@@ -953,18 +960,11 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
                 cp ${token_list} ${token_list}".duplicated"
                 awk '!seen[$0]++' ${token_list}".duplicated" > ${token_list}
                 rm ${token_list}".duplicated"
+            fi
     elif [ "${token_type}" = segmel ]; then
         log "Stage 5: Generate segment+melody word level token_list from ${lm_train_text}"
 
         _opts="--non_linguistic_symbols ${nlsyms_txt}"
-
-        if ${sot_asr} && [ "${token_type}" = char ]; then
-            # For SOT training, we add <sc> as an user-defined modeling unit.
-            # The input text may be `text^1 <sc> text^2 <sc> text^3`, where `text^n`
-            # refers to the transcription of `speaker n`.
-            # The order of different texts is determined by their start times.
-            _opts+=" --add_nonsplit_symbol <sc>:2 "
-        fi
 
         # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
         # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
@@ -974,19 +974,23 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
             --field 2- \
             --cleaner "${cleaner}" \
             --g2p "${g2p}" \
-            --write_vocabulary true \
+            --write_vocabulary false \
             --add_symbol "${blank}:0" \
             --add_symbol "${oov}:1" \
             --add_symbol "${sos_eos}:-1"
 
-            # Duplicated <sc> token may be counted for char token type,
-            # so we shoud remove it
-            if ${sot_asr} && [ "${token_type}" = char ]; then
-                cp ${token_list} ${token_list}".duplicated"
-                awk '!seen[$0]++' ${token_list}".duplicated" > ${token_list}
-                rm ${token_list}".duplicated"
-            fi
-            fi
+        # Deduplicate
+        cp ${token_list} ${token_list}".duplicated"
+        sed -i 's/ /\n/g' "${token_list}.duplicated"
+        cp ${token_list}".duplicated" ${token_list}".bak"
+        {
+        echo "${blank}"
+        echo "${oov}"
+        awk '!seen[$0]++' ${token_list}".duplicated"
+        echo "${sos_eos}"
+        } > "${token_list}"
+        rm ${token_list}".duplicated"
+
     elif grep -q "whisper" <<< ${token_type}; then
         log "Stage 5: Generate whisper token_list from ${token_type} tokenizer"
 

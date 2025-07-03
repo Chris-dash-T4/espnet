@@ -201,7 +201,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--token_type",
         "-t",
         default="char",
-        choices=["char", "bpe", "word", "phn"],
+        #choices=["char", "bpe", "word", "phn"],
         help="Token type",
     )
     parser.add_argument("--delimiter", "-d", default=None, help="The delimiter")
