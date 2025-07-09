@@ -425,6 +425,11 @@ class Speech2Text:
                 whisper_task=whisper_task,
                 non_linguistic_symbols=prompt_token_file,
             )
+        elif token_type == "segmel":
+            tokenizer = build_tokenizer(
+                token_type=token_type,
+                non_linguistic_symbols=prompt_token_file,
+            )
         else:
             tokenizer = build_tokenizer(token_type=token_type)
 

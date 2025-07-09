@@ -106,8 +106,14 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
                     continue
                 current_seg = t.split("|")
             elif re.match(r"[()1-4]+\|?", t):
-                assert len(current_seg) == len(t.split("|"))
-                word = "".join([s + m for s, m in zip(current_seg, t.split("|"))])
+                melody = t.split("|")
+                if len(current_seg) != len(melody):
+                    print(f"{current_seg} vs {melody}")
+                    # Pad invalid tokens
+                    melody += ["#"] * len(current_seg)
+                    # Crop to match segment length
+                    melody = melody[:len(current_seg)]
+                word = "".join([s + m for s, m in zip(current_seg, melody)])
                 #print(current_seg,"->",word)
                 words.append(word)
                 current_seg = None

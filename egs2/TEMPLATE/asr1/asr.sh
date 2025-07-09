@@ -1597,6 +1597,9 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         elif "${use_maskctc}"; then
             inference_bin_tag="_maskctc"
         fi
+        if [ ${token_type} = "segmel" ]; then
+            _opts+="--prompt_token_file ${nlsyms_txt}"
+        fi
     fi
 
     if "${eval_valid_set}"; then
@@ -1706,8 +1709,9 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
         _data="${data_feats}/${dset}"
         _dir="${asr_exp}/${inference_tag}/${dset}"
 
-        for _tok_type in "char" "word" "bpe"; do
+        for _tok_type in "char" "word" "bpe" "segmel"; do
             [ "${_tok_type}" = bpe ] && [ ! -f "${bpemodel}" ] && continue
+            [ "${_tok_type}" = segmel ] && [ "${token_type}" != segmel ] && continue
 
             _opts="--token_type ${_tok_type} "
             if [ "${_tok_type}" = "char" ] || [ "${_tok_type}" = "word" ]; then
@@ -1722,6 +1726,9 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
             elif [ "${_tok_type}" = "bpe" ]; then
                 _type="ter"
                 _opts+="--bpemodel ${bpemodel} "
+            elif [ "${_tok_type}" = "segmel" ]; then
+                _type="ter"
+                _opts+="--non_linguistic_symbols ${nlsyms_txt} "
 
             else
                 log "Error: unsupported token type ${_tok_type}"
