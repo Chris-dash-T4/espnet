@@ -7,7 +7,7 @@ from espnet2.text.abs_tokenizer import AbsTokenizer
 from espnet2.text.char_tokenizer import CharTokenizer
 from espnet2.text.hugging_face_tokenizer import HuggingFaceTokenizer
 from espnet2.text.phoneme_tokenizer import PhonemeTokenizer
-from espnet2.text.sentencepiece_tokenizer import SentencepiecesTokenizer
+from espnet2.text.sentencepiece_tokenizer import SentencepiecesTokenizer, SentencepieceWrapper
 from espnet2.text.whisper_tokenizer import OpenAIWhisperTokenizer
 from espnet2.text.word_tokenizer import WordTokenizer
 from espnet2.text.segmel_tokenizer import SegmentAndMelodyTokenizer
@@ -94,6 +94,17 @@ def build_tokenizer(
             delimiter=delimiter,
             non_linguistic_symbols=non_linguistic_symbols,
             remove_non_linguistic_symbols=remove_non_linguistic_symbols,
+        )
+
+    elif token_type == "segmel_bpe":
+        return SentencepieceWrapper(
+            inner_tokenizer=SegmentAndMelodyTokenizer(
+                delimiter=delimiter,
+                non_linguistic_symbols=non_linguistic_symbols,
+                remove_non_linguistic_symbols=remove_non_linguistic_symbols,
+            ),
+            model=bpemodel,
+            encode_kwargs=encode_kwargs,
         )
 
     else:

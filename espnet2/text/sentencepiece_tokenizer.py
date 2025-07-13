@@ -35,3 +35,18 @@ class SentencepiecesTokenizer(AbsTokenizer):
     def tokens2text(self, tokens: Iterable[str]) -> str:
         self._build_sentence_piece_processor()
         return self.sp.DecodePieces(list(tokens))
+
+class SentencepieceWrapper(SentencepiecesTokenizer):
+    def __init__(self, inner_tokenizer : AbsTokenizer, model: Union[Path, str], encode_kwargs: Dict = dict()):
+        super().__init__(model, encode_kwargs)
+
+        self.inner_tokenizer = inner_tokenizer
+
+    def text2tokens(self, line: str) -> List[str]:
+        self._build_sentence_piece_processor()
+        firstpass = self.inner_tokenizer.text2tokens(line)
+        return self.sp.EncodeAsPieces(' '.join(firstpass), **self.encode_kwargs)
+    
+    def tokens2text(self, tokens: Iterable[str]) -> str:
+        self._build_sentence_piece_processor()
+        return self.inner_tokenizer.tokens2text(self.sp.DecodePieces(list(tokens)).split(' '))

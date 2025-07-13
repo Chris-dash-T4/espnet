@@ -418,9 +418,12 @@ elif [ "${token_type}" = whisper_multilingual ]; then
 elif [ "${token_type}" = hugging_face ]; then
     token_list="${hugging_face_token_list}"
     bpemodel=${hugging_face_model_name_or_path}
-elif [ "${token_type}" = segmel ]; then
-    token_list="${token_listdir}/segmel/tokens.txt"
-    bpemodel=none
+elif [ "${token_type}" = segmel_bpe ]; then
+    bpedir="${token_listdir}/segmel_bpe_${bpemode}${nbpe}"
+    bpeprefix="${bpedir}"/bpe
+    bpemodel="${bpeprefix}".model
+    bpetoken_list="${bpedir}"/tokens.txt
+    token_list="${bpetoken_list}"
 else
     log "Error: not supported --token_type '${token_type}'"
     exit 2
@@ -990,6 +993,41 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
         echo "${sos_eos}"
         } > "${token_list}"
         rm ${token_list}".duplicated"
+
+    elif [ "${token_type}" = segmel_bpe ]; then
+        log "Stage 5: Generate segment+melody word level token_list from ${lm_train_text}"
+
+        _opts="--non_linguistic_symbols ${nlsyms_txt}"
+
+        # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
+        # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
+        ${python} -m espnet2.bin.tokenize_text  \
+            --token_type "${token_type}" \
+            --input "${data_feats}/lm_train.txt" --output "${token_list}.midpoint" ${_opts} \
+            --field 2- \
+            --cleaner "${cleaner}" \
+            --g2p "${g2p}" \
+            --write_vocabulary false \
+            --add_symbol "${blank}:0" \
+            --add_symbol "${oov}:1" \
+            --add_symbol "${sos_eos}:-1"
+
+        spm_train \
+            --input="${token_list}.midpoint" \
+            --vocab_size="${nbpe}" \
+            --model_type="${bpemode}" \
+            --model_prefix="${bpeprefix}" \
+            --character_coverage=${bpe_char_cover} \
+            --input_sentence_size="${bpe_input_sentence_size}" \
+            ${_opts_spm}
+
+        {
+        echo "${blank}"
+        echo "${oov}"
+        # Remove <unk>, <s>, </s> from the vocabulary
+        <"${bpeprefix}".vocab awk '{ if( NR != 1 && NR != 2 && NR != 3 ){ print $1; } }'
+        echo "${sos_eos}"
+        } > "${token_list}"
 
     elif grep -q "whisper" <<< ${token_type}; then
         log "Stage 5: Generate whisper token_list from ${token_type} tokenizer"

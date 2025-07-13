@@ -430,6 +430,12 @@ class Speech2Text:
                 token_type=token_type,
                 non_linguistic_symbols=prompt_token_file,
             )
+        elif token_type == "segmel_bpe":
+            tokenizer = build_tokenizer(
+                token_type=token_type,
+                non_linguistic_symbols=prompt_token_file,
+                bpemodel=bpemodel,
+            )
         else:
             tokenizer = build_tokenizer(token_type=token_type)
 
