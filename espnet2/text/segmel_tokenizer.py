@@ -107,6 +107,9 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
                 current_seg = t.split("|")
             elif re.match(r"[()1-4]+\|?", t):
                 melody = t.split("|")
+                if current_seg is None:
+                    print(f"Trailing tone melody: {melody}")
+                    continue
                 if len(current_seg) != len(melody):
                     print(f"{current_seg} vs {melody}")
                     # Pad invalid tokens
@@ -135,8 +138,10 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
                     current_seg[-1] += t
                 else:
                     current_seg = [t]
+            elif t == '':
+                continue
             else:
-                raise ValueError(f"invalid token: {t}")
+                raise ValueError(f"invalid token: '{t}' ({len(t)} characters: {[ord(c) for c in t]})")
         if current_seg is not None:
             words.append(''.join(current_seg))
         return re.sub(r"([(\[¡¿])(\s)",r'\2\1',delimiter.join(words).replace(" =", "=").replace("- ", "-"))

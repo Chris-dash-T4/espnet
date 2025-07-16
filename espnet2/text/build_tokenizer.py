@@ -104,7 +104,7 @@ def build_tokenizer(
                 remove_non_linguistic_symbols=remove_non_linguistic_symbols,
             ),
             model=bpemodel,
-            encode_kwargs=encode_kwargs,
+            encode_kwargs=encode_kwargs or dict(),
         )
 
     else:

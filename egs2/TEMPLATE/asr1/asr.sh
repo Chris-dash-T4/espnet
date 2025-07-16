@@ -418,6 +418,9 @@ elif [ "${token_type}" = whisper_multilingual ]; then
 elif [ "${token_type}" = hugging_face ]; then
     token_list="${hugging_face_token_list}"
     bpemodel=${hugging_face_model_name_or_path}
+elif [ "${token_type}" = segmel ]; then
+    token_list="${token_listdir}/segmel/tokens.txt"
+    bpemodel=none
 elif [ "${token_type}" = segmel_bpe ]; then
     bpedir="${token_listdir}/segmel_bpe_${bpemode}${nbpe}"
     bpeprefix="${bpedir}"/bpe
@@ -452,7 +455,7 @@ if [ -z "${asr_tag}" ]; then
     else
         asr_tag+="_${token_type}"
     fi
-    if [ "${token_type}" = bpe ]; then
+    if [ "${token_type}" = bpe ] || [ "${token_type}" = segmel_bpe ]; then
         asr_tag+="${nbpe}"
     fi
     if [ "${token_type}" = hugging_face ]; then
@@ -477,7 +480,7 @@ if [ -z "${lm_tag}" ]; then
     else
         lm_tag+="_${lm_token_type}"
     fi
-    if [ "${lm_token_type}" = bpe ]; then
+    if [ "${lm_token_type}" = bpe ] || [ "${lm_token_type}" = segmel_bpe ]; then
         lm_tag+="${nbpe}"
     elif [ "${lm_token_type}" != "${token_type}" ]; then
         lm_tag+="_${token_type}"
@@ -495,7 +498,7 @@ if [ -z "${asr_stats_dir}" ]; then
     else
         asr_stats_dir="${expdir}/asr_stats_${feats_type}_${token_type}"
     fi
-    if [ "${token_type}" = bpe ]; then
+    if [ "${token_type}" = bpe ] || [ "${token_type}" = segmel_bpe ]; then
         asr_stats_dir+="${nbpe}"
     fi
     if [ "${token_type}" = hugging_face ]; then
@@ -511,7 +514,7 @@ if [ -z "${lm_stats_dir}" ]; then
     else
         lm_stats_dir="${expdir}/lm_stats_${lm_token_type}"
     fi
-    if [ "${lm_token_type}" = bpe ]; then
+    if [ "${lm_token_type}" = bpe ] || [ "${lm_token_type}" = segmel_bpe ]; then
         lm_stats_dir+="${nbpe}"
     elif [ "${lm_token_type}" != "${token_type}" ]; then
         lm_stats_dir+="_${token_type}"
@@ -998,11 +1001,20 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
         log "Stage 5: Generate segment+melody word level token_list from ${lm_train_text}"
 
         _opts="--non_linguistic_symbols ${nlsyms_txt}"
+        _opts_spm=""
+
+        if ${sot_asr}; then
+            # For SOT training, we add <sc> as an user-defined modeling unit.
+            # The input text may be `text^1 <sc> text^2 <sc> text^3`, where `text^n`
+            # refers to the transcription of `speaker n`.
+            # The order of different texts is determined by their start times.
+            _opts_spm+=" --user_defined_symbols=<sc>"
+        fi
 
         # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
         # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
         ${python} -m espnet2.bin.tokenize_text  \
-            --token_type "${token_type}" \
+            --token_type "segmel" \
             --input "${data_feats}/lm_train.txt" --output "${token_list}.midpoint" ${_opts} \
             --field 2- \
             --cleaner "${cleaner}" \
@@ -1011,6 +1023,8 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
             --add_symbol "${blank}:0" \
             --add_symbol "${oov}:1" \
             --add_symbol "${sos_eos}:-1"
+
+        log "Generating BPE over segment+melody tokens..."
 
         spm_train \
             --input="${token_list}.midpoint" \
@@ -1635,7 +1649,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         elif "${use_maskctc}"; then
             inference_bin_tag="_maskctc"
         fi
-        if [ ${token_type} = "segmel" ]; then
+        if [ ${token_type} = "segmel" ] || [ ${token_type} = "segmel_bpe" ]; then
             _opts+="--prompt_token_file ${nlsyms_txt}"
         fi
     fi
