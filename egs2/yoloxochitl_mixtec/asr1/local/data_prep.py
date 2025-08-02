@@ -21,12 +21,14 @@ delset = delset.replace("'", "")
 
 
 def TextRefine(text, text_format):
-    text = re.sub(r"…|\.\.\.|\*|\[.*?\]", "", text.upper())
-    delset_specific = delset
+    text = re.sub(r"…|\.\.\.|\*|\[.*?\]|<[^>]*>", "", text.upper())
+    # keep all punctuation
+    delset_specific = "()"
     if text_format == "underlying_full":
-        remove_clear = "()=-"
+        remove_clear = "=-"
         for char in remove_clear:
             delset_specific = delset_specific.replace(char, "")
+    #print(f'Delset: "{delset_specific}"')
     return text.translate(str.maketrans("", "", delset_specific))
 
 
@@ -230,14 +232,15 @@ def normalize_text(text : str):
     text = text.replace('...', '…')
     # Normalize code switching to single-word tokens
     # ie. <i>palabras españolas</i> -> palabras españolas
-    italic = chain(re.finditer(r'<i>([^<]+)</?i/?>', text), re.finditer(r'\*([^*]+)\*\*', text))
+    italic = chain(re.finditer(r'</?[iI]>([^<]+)(</?[iI]*/?>|</[iI]|<.[iI]>)', text), re.finditer(r'\*([^*]+)\*{1,3}', text))
     for match in italic:
         # Strip all italics for now
         # TODO enable toggle for italicizing code-switched words
         text = text.replace(match.group(0), match.group(1))
-    text = re.sub(r'<i>([^<]+)$', r'\1', text)
-    text = re.sub(r'^([^<]+)</i>', r'\1', text)
+    text = re.sub(r'<[iI]>([^<]+)$', r'\1', text)
+    text = re.sub(r'^([^<]+)</[iI]>', r'\1', text)
     assert '<i>' not in text, f'<i> found in "{text}"'
+    assert '<I>' not in text, f'<I> found in "{text}"'
     return text.lower()
 
 def ELANProcess(afile, spk_info, spk_details, text_format):

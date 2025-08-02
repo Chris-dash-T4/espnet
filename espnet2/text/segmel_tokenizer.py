@@ -141,7 +141,17 @@ class SegmentAndMelodyTokenizer(AbsTokenizer):
             elif t == '':
                 continue
             else:
-                raise ValueError(f"invalid token: '{t}' ({len(t)} characters: {[ord(c) for c in t]})")
+                #raise ValueError(f"invalid token: '{t}' ({len(t)} characters: {[ord(c) for c in t]})")
+                print(f"invalid token: '{t}' ({len(t)} characters: {[ord(c) for c in t]})")
+                if current_seg is not None and current_seg[0] not in self.non_linguistic_symbols:
+                    words.append(''.join(current_seg))
+                    current_seg = None
+                elif current_seg is not None:
+                    pre = current_seg[0]
+                    words.append(pre+t)
+                    current_seg = None
+                    continue
+                words.append(t)
         if current_seg is not None:
             words.append(''.join(current_seg))
         return re.sub(r"([(\[¡¿])(\s)",r'\2\1',delimiter.join(words).replace(" =", "=").replace("- ", "-"))
