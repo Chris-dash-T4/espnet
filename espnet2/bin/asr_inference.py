@@ -436,6 +436,19 @@ class Speech2Text:
                 non_linguistic_symbols=prompt_token_file,
                 bpemodel=bpemodel,
             )
+        elif token_type == "procseq":
+            tokenizer = build_tokenizer(
+                token_type=token_type,
+                non_linguistic_symbols=prompt_token_file,
+                proc_seq_kwargs=whisper_task,
+            )
+        elif token_type == "procseq_bpe":
+            tokenizer = build_tokenizer(
+                token_type=token_type,
+                non_linguistic_symbols=prompt_token_file,
+                bpemodel=bpemodel,
+                proc_seq_kwargs=whisper_task,
+            )
         else:
             tokenizer = build_tokenizer(token_type=token_type)
 

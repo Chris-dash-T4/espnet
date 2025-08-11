@@ -11,6 +11,7 @@ from espnet2.text.sentencepiece_tokenizer import SentencepiecesTokenizer, Senten
 from espnet2.text.whisper_tokenizer import OpenAIWhisperTokenizer
 from espnet2.text.word_tokenizer import WordTokenizer
 from espnet2.text.segmel_tokenizer import SegmentAndMelodyTokenizer
+from espnet2.text.fst_procseq_tokenizer import ProcessSequenceTokenizer, procseq_kwargs_to_dict
 
 
 @typechecked
@@ -29,6 +30,8 @@ def build_tokenizer(
     whisper_language: Optional[str] = None,
     whisper_task: Optional[str] = None,
     sot_asr: bool = False,
+    # only use for process sequence
+    proc_seq_kwargs: Optional[str] = None,
 ) -> AbsTokenizer:
     """A helper function to instantiate Tokenizer"""
     if token_type == "bpe":
@@ -102,6 +105,32 @@ def build_tokenizer(
                 delimiter=delimiter,
                 non_linguistic_symbols=non_linguistic_symbols,
                 remove_non_linguistic_symbols=remove_non_linguistic_symbols,
+            ),
+            model=bpemodel,
+            encode_kwargs=encode_kwargs or dict(),
+        )
+
+    elif token_type == "procseq":
+        kwargs = dict()
+        if proc_seq_kwargs is not None:
+            kwargs = procseq_kwargs_to_dict(proc_seq_kwargs)
+        return ProcessSequenceTokenizer(
+            delimiter=delimiter,
+            non_linguistic_symbols=non_linguistic_symbols,
+            remove_non_linguistic_symbols=remove_non_linguistic_symbols,
+            **kwargs,
+        )
+
+    elif token_type == "procseq_bpe":
+        kwargs = dict()
+        if proc_seq_kwargs is not None:
+            kwargs = procseq_kwargs_to_dict(proc_seq_kwargs)
+        return SentencepieceWrapper(
+            inner_tokenizer=ProcessSequenceTokenizer(
+                delimiter=delimiter,
+                non_linguistic_symbols=non_linguistic_symbols,
+                remove_non_linguistic_symbols=remove_non_linguistic_symbols,
+                **kwargs,
             ),
             model=bpemodel,
             encode_kwargs=encode_kwargs or dict(),

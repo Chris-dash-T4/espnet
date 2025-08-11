@@ -71,6 +71,7 @@ bpe_input_sentence_size=100000000 # Size of input sentence for BPE.
 bpe_nlsyms=         # non-linguistic symbols list, separated by a comma or a file containing 1 symbol per line, for BPE
 bpe_char_cover=1.0  # character coverage when modeling BPE
 hugging_face_model_name_or_path="" # Hugging Face model or path for hugging_face tokenizer
+procseq_kwargs=""   # The options given to espnet2.bin.tokenize_text --proc_seq_kwargs
 
 # Ngram model related
 use_ngram=false
@@ -212,6 +213,7 @@ Options:
     --bpe_input_sentence_size # Size of input sentence for BPE (default="${bpe_input_sentence_size}").
     --bpe_nlsyms              # Non-linguistic symbol list for sentencepiece, separated by a comma or a file containing 1 symbol per line . (default="${bpe_nlsyms}").
     --bpe_char_cover          # Character coverage when modeling BPE (default="${bpe_char_cover}").
+    --procseq_kwargs          # The options given to espnet2.bin.tokenize_text --proc_seq_kwargs (default="${procseq_kwargs}").
 
     # Language model related
     --lm_tag          # Suffix to the result dir for language model training (default="${lm_tag}").
@@ -427,6 +429,15 @@ elif [ "${token_type}" = segmel_bpe ]; then
     bpemodel="${bpeprefix}".model
     bpetoken_list="${bpedir}"/tokens.txt
     token_list="${bpetoken_list}"
+elif [ "${token_type}" = procseq ]; then
+    token_list="${token_listdir}/procseq/tokens.txt"
+    bpemodel=none
+elif [ "${token_type}" = procseq_bpe ]; then
+    bpedir="${token_listdir}/procseq_bpe_${bpemode}${nbpe}"
+    bpeprefix="${bpedir}"/bpe
+    bpemodel="${bpeprefix}".model
+    bpetoken_list="${bpedir}"/tokens.txt
+    token_list="${bpetoken_list}"
 else
     log "Error: not supported --token_type '${token_type}'"
     exit 2
@@ -455,7 +466,7 @@ if [ -z "${asr_tag}" ]; then
     else
         asr_tag+="_${token_type}"
     fi
-    if [ "${token_type}" = bpe ] || [ "${token_type}" = segmel_bpe ]; then
+    if [ "${token_type}" = bpe ] || [[ "${token_type}" =~ .*_bpe ]]; then
         asr_tag+="${nbpe}"
     fi
     if [ "${token_type}" = hugging_face ]; then
@@ -480,7 +491,7 @@ if [ -z "${lm_tag}" ]; then
     else
         lm_tag+="_${lm_token_type}"
     fi
-    if [ "${lm_token_type}" = bpe ] || [ "${lm_token_type}" = segmel_bpe ]; then
+    if [ "${lm_token_type}" = bpe ] || [[ "${lm_token_type}" =~ .*_bpe ]]; then
         lm_tag+="${nbpe}"
     elif [ "${lm_token_type}" != "${token_type}" ]; then
         lm_tag+="_${token_type}"
@@ -498,7 +509,7 @@ if [ -z "${asr_stats_dir}" ]; then
     else
         asr_stats_dir="${expdir}/asr_stats_${feats_type}_${token_type}"
     fi
-    if [ "${token_type}" = bpe ] || [ "${token_type}" = segmel_bpe ]; then
+    if [ "${token_type}" = bpe ] || [[ "${token_type}" =~ .*_bpe ]]; then
         asr_stats_dir+="${nbpe}"
     fi
     if [ "${token_type}" = hugging_face ]; then
@@ -514,7 +525,7 @@ if [ -z "${lm_stats_dir}" ]; then
     else
         lm_stats_dir="${expdir}/lm_stats_${lm_token_type}"
     fi
-    if [ "${lm_token_type}" = bpe ] || [ "${lm_token_type}" = segmel_bpe ]; then
+    if [ "${lm_token_type}" = bpe ] || [[ "${lm_token_type}" =~ .*_bpe ]]; then
         lm_stats_dir+="${nbpe}"
     elif [ "${lm_token_type}" != "${token_type}" ]; then
         lm_stats_dir+="_${token_type}"
@@ -1025,6 +1036,85 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
             --add_symbol "${sos_eos}:-1"
 
         log "Generating BPE over segment+melody tokens..."
+
+        spm_train \
+            --input="${token_list}.midpoint" \
+            --vocab_size="${nbpe}" \
+            --model_type="${bpemode}" \
+            --model_prefix="${bpeprefix}" \
+            --character_coverage=${bpe_char_cover} \
+            --input_sentence_size="${bpe_input_sentence_size}" \
+            ${_opts_spm}
+
+        {
+        echo "${blank}"
+        echo "${oov}"
+        # Remove <unk>, <s>, </s> from the vocabulary
+        <"${bpeprefix}".vocab awk '{ if( NR != 1 && NR != 2 && NR != 3 ){ print $1; } }'
+        echo "${sos_eos}"
+        } > "${token_list}"
+
+
+    elif [ "${token_type}" = procseq ]; then
+        log "Stage 5: Generate process sequence token_list from ${lm_train_text}"
+
+        _opts="--non_linguistic_symbols ${nlsyms_txt}"
+
+        # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
+        # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
+        ${python} -m espnet2.bin.tokenize_text  \
+            --token_type "${token_type}" \
+            --input "${data_feats}/lm_train.txt" --output "${token_list}" ${_opts} \
+            --proc_seq_kwargs "${procseq_kwargs}" \
+            --field 2- \
+            --cleaner "${cleaner}" \
+            --g2p "${g2p}" \
+            --write_vocabulary false \
+            --add_symbol "${blank}:0" \
+            --add_symbol "${oov}:1" \
+            --add_symbol "${sos_eos}:-1"
+
+        # Deduplicate
+        cp ${token_list} ${token_list}".duplicated"
+        sed -i 's/ /\n/g' "${token_list}.duplicated"
+        cp ${token_list}".duplicated" ${token_list}".bak"
+        {
+        echo "${blank}"
+        echo "${oov}"
+        awk '!seen[$0]++' ${token_list}".duplicated"
+        echo "${sos_eos}"
+        } > "${token_list}"
+        rm ${token_list}".duplicated"
+
+    elif [ "${token_type}" = procseq_bpe ]; then
+        log "Stage 5: Generate process sequence token_list from ${lm_train_text}"
+
+        _opts="--non_linguistic_symbols ${nlsyms_txt}"
+        _opts_spm=""
+
+        if ${sot_asr}; then
+            # For SOT training, we add <sc> as an user-defined modeling unit.
+            # The input text may be `text^1 <sc> text^2 <sc> text^3`, where `text^n`
+            # refers to the transcription of `speaker n`.
+            # The order of different texts is determined by their start times.
+            _opts_spm+=" --user_defined_symbols=<sc>"
+        fi
+
+        # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
+        # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
+        ${python} -m espnet2.bin.tokenize_text  \
+            --token_type "segmel" \
+            --input "${data_feats}/lm_train.txt" --output "${token_list}.midpoint" ${_opts} \
+            --proc_seq_kwargs "${procseq_kwargs}" \
+            --field 2- \
+            --cleaner "${cleaner}" \
+            --g2p "${g2p}" \
+            --write_vocabulary false \
+            --add_symbol "${blank}:0" \
+            --add_symbol "${oov}:1" \
+            --add_symbol "${sos_eos}:-1"
+
+        log "Generating BPE over process sequence tokens..."
 
         spm_train \
             --input="${token_list}.midpoint" \

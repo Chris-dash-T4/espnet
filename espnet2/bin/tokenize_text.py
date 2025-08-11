@@ -79,6 +79,7 @@ def tokenize(
     cleaner: Optional[str],
     g2p: Optional[str],
     add_nonsplit_symbol: List[str],
+    proc_seq_kwargs: Optional[str],
 ):
 
     logging.basicConfig(
@@ -106,6 +107,7 @@ def tokenize(
         remove_non_linguistic_symbols=remove_non_linguistic_symbols,
         g2p_type=g2p,
         nonsplit_symbol=add_nonsplit_symbol,
+        proc_seq_kwargs=proc_seq_kwargs,
     )
 
     counter = Counter()
@@ -268,6 +270,11 @@ def get_parser() -> argparse.ArgumentParser:
         default=[],
         action="append",
         help="Append symbol that is nonsplit e.g. --add_nonsplit_symbol '<sc>:2",
+    )
+    group.add_argument(
+        "--proc_seq_kwargs",
+        type=str_or_none,
+        help="Keyword arguments of process-sequence tokenizer",
     )
 
     return parser
