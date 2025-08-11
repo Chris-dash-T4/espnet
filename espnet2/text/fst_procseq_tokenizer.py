@@ -105,9 +105,10 @@ class ProcessSequenceTokenizer(AbsTokenizer):
                 self.cache.parent.mkdir(parents=True,exist_ok=True)
                 self.cache.touch()
             else:
-                self.scores_for_prefix = defaultdict(lambda: -float('inf'))
+                self.scores_for_prefix = defaultdict(lambda: None)
                 with self.cache.open("rb") as f:
                     self.scores_for_prefix.update(pickle.load(f))
+                self.scores_for_prefix.update({k: None for k,v in self.scores_for_prefix.items() if v == -float("inf")})
 
         self.encode_kwargs = encode_kwargs
 
@@ -321,19 +322,21 @@ class ProcessSequenceTokenizer(AbsTokenizer):
     def compute_punctuation_processor(self):
         '''Builds a preprocessor FST to split punctuation from words'''
         if self.punctuation_processor is None:
-            builder = [f"0 0 {self.tokens[c]} {self.tokens[c]} 0" for c in self.tokens if c not in (self.non_linguistic_symbols | {'-','='}) and c != '<eps>']
-            builder.append(f"0 1 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
-            builder.append(f"0 1 {self.tokens['<space>']} {self.tokens['<space>']} 0")
-            builder.append(f"0 3 -1 -1 0")
-            builder.append(f"0 2 {self.tokens['-']} {self.tokens['-']} 0") # dashes only get final spacing
-            builder += [f"1 2 {self.tokens[c]} {self.tokens[c]} 0" for c in self.non_linguistic_symbols]
-            builder.append(f"1 0 {self.tokens['=']} {self.tokens['=']} 0") # enclitics only get initial spacing
-            builder.append(f"2 0 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
-            builder.append(f"2 0 {self.tokens['<space>']} {self.tokens['<space>']} 0")
-            builder.append(f"2 1 {self.tokens['<eps>']} {self.tokens['<space>']} -0.5")
-            builder.append(f"2 1 {self.tokens['<space>']} {self.tokens['<space>']} 0")
-            builder.append(f"2 3 -1 -1 0.1")
-            builder.append("3")
+            builder = [f"0 1 {self.tokens['<eps>']} {self.tokens['<eps>']} 0"]
+            builder.append(f"0 2 {self.tokens['<eps>']} {self.tokens['<eps>']} 0")
+            builder += [f"1 1 {self.tokens[c]} {self.tokens[c]} 0" for c in self.tokens if c not in (self.non_linguistic_symbols | {'-','='}) and c != '<eps>']
+            builder.append(f"1 2 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
+            builder.append(f"1 2 {self.tokens['<space>']} {self.tokens['<space>']} 0")
+            builder.append(f"1 4 -1 -1 0")
+            builder.append(f"1 3 {self.tokens['-']} {self.tokens['-']} 0") # dashes only get final spacing
+            builder += [f"2 3 {self.tokens[c]} {self.tokens[c]} 0" for c in self.non_linguistic_symbols]
+            builder.append(f"2 1 {self.tokens['=']} {self.tokens['=']} 0") # enclitics only get initial spacing
+            builder.append(f"3 1 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
+            builder.append(f"3 1 {self.tokens['<space>']} {self.tokens['<space>']} 0")
+            builder.append(f"3 2 {self.tokens['<eps>']} {self.tokens['<space>']} -0.5")
+            builder.append(f"3 2 {self.tokens['<space>']} {self.tokens['<space>']} 0")
+            builder.append(f"3 4 -1 -1 0.1")
+            builder.append("4")
             fst_punctuation = k2.Fsa.from_str('\n'.join(builder),acceptor=False)
             fst_punctuation = k2.arc_sort(fst_punctuation)
             self.punctuation_processor = fst_punctuation
