@@ -330,6 +330,8 @@ class ProcessSequenceTokenizer(AbsTokenizer):
             builder.append(f"1 0 {self.tokens['=']} {self.tokens['=']} 0") # enclitics only get initial spacing
             builder.append(f"2 0 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
             builder.append(f"2 0 {self.tokens['<space>']} {self.tokens['<space>']} 0")
+            builder.append(f"2 1 {self.tokens['<eps>']} {self.tokens['<space>']} -0.5")
+            builder.append(f"2 1 {self.tokens['<space>']} {self.tokens['<space>']} 0")
             builder.append(f"2 3 -1 -1 0.1")
             builder.append("3")
             fst_punctuation = k2.Fsa.from_str('\n'.join(builder),acceptor=False)
