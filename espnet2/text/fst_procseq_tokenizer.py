@@ -77,7 +77,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         self.preproc_path = encode_kwargs.pop("preproc_fst", None)
         if self.preproc_path is not None:
             try:
-                with open(self.fstpath, "r", encoding="utf-8") as f:
+                with open(self.preproc_path, "r", encoding="utf-8") as f:
                     self.fst_pre_ling = k2.Fsa.from_openfst(f.read(), acceptor=False)
                     self.fst_pre_ling = k2.arc_sort(self.fst_pre_ling)
             except FileNotFoundError:
@@ -150,6 +150,8 @@ class ProcessSequenceTokenizer(AbsTokenizer):
             word = match_.group(0)
             word, *processes = [canonical_forms.get(tok,tok) for tok in word.split(' ')]
             for i,proc in enumerate(processes):
+                if proc not in canonical_forms.values():
+                    print("Unknown canonical form:",proc)
                 prefix = r"[1-4{}>]+[A-ZÑ']+"*i
                 word = re.sub(r"(^[A-ZÑ']+"+prefix+r")[1-4]+",lambda m: m.group(1)+proc,word)
             res = re.sub(re.escape(match_.group(0)),word,res)
@@ -159,7 +161,9 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         else:
             res = re.sub(r'\s([!?.,=:])',r'\1',res)
             res = re.sub(r'([¡¿-])\s',r'\1',res)
-            return re.sub(r'\{[^}]*>([^}]*)}',r'\1',res)
+            res = re.sub(r'\{[^}]*>([^>}]*)}',r'\1',res)
+            res = re.sub(r'([1-4])\1',r'\1',res)
+            return res
 
     def build_acceptor_fst(self,text : str) -> k2.Fsa:
         '''Builds an acceptor FST from a text string'''
@@ -193,7 +197,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
     def compute_log_probabilities(self, input_text : str, target_text : str, prefix : str = '') -> float:
         '''Computes log probability of target_text given input_text according to the language model'''
         # Update format depending on model
-        input_ids = self.lm_tokenizer(input_text, return_tensors="pt").input_ids.to(self.lm.device)
+        input_ids = self.lm_tokenizer(f"translate practical to g3: {input_text}", return_tensors="pt").input_ids.to(self.lm.device)
         target_text_full = prefix + target_text
         prefix_len = len(self.lm_tokenizer(text_target=prefix).input_ids[:-1])
         labels = self.lm_tokenizer(text_target=target_text_full, return_tensors="pt").input_ids.to(self.lm.device)
@@ -344,6 +348,7 @@ canonical_forms = {
 	"3>1": "{3>1}",
 	"3>4": "{3>4}",
 	"3>14": "{3>14}",
+	"34>14": "{3>14}", # FIXME: This is not the correct canonical form, but FST sometimes generates it
 	"3>1>4": "{3>1>4}",
 	"3>1>14": "{3>1>14}",
 	"1>11": "{>1}1",

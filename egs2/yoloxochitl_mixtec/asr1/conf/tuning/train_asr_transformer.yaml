@@ -47,7 +47,7 @@ best_model_criterion:
 -  - valid
    - acc
    - max
-keep_nbest_models: 100
+keep_nbest_models: 10
 
 # Better initialization
 init: xavier_uniform
