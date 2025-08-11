@@ -1,7 +1,8 @@
 import argparse
-import pickle
+import h5py
 import re
 import k2
+import numpy as np
 import torch
 import warnings
 from pathlib import Path
@@ -17,6 +18,12 @@ from espnet2.text.abs_tokenizer import AbsTokenizer
 from transformers import AutoTokenizer, T5ForConditionalGeneration
 
 class ProcessSequenceTokenizer(AbsTokenizer):
+
+    serialization_dtype = np.dtype([
+        ('key1', h5py.string_dtype(encoding='utf-8')),
+        ('key2', h5py.string_dtype(encoding='utf-8')),
+        ('value', np.float32)
+    ])
 
     def __init__(
         self,
@@ -101,14 +108,23 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         self.cache = encode_kwargs.pop("scores_cache", None)
         if self.cache is not None:
             self.cache = Path(self.cache)
-            if not self.cache.exists():
-                self.cache.parent.mkdir(parents=True,exist_ok=True)
-                self.cache.touch()
+            self.scores_for_prefix = defaultdict(lambda: None)
+            if self.cache.exists():
+                try:
+                    with h5py.File(self.cache, "r") as f:
+                        ds = f["scores"]
+                        self.scores_for_prefix.update({(key1.decode('utf-8'),key2.decode('utf-8')):value for key1,key2,value in ds})
+                except:
+                    with h5py.File(self.cache, "w") as f:
+                        ds = f.create_dataset("scores", shape=(1,), maxshape=(None,),dtype=self.serialization_dtype)
+                        ds[0] = np.array([('','',0)],dtype=ds.dtype)
             else:
-                self.scores_for_prefix = defaultdict(lambda: None)
-                with self.cache.open("rb") as f:
-                    self.scores_for_prefix.update(pickle.load(f))
-                self.scores_for_prefix.update({k: None for k,v in self.scores_for_prefix.items() if v == -float("inf")})
+                self.cache.parent.mkdir(parents=True,exist_ok=True)
+                with h5py.File(self.cache, "w") as f:
+                    ds = f.create_dataset("scores", shape=(1,), maxshape=(None,),dtype=self.serialization_dtype)
+                    ds[0] = np.array([('','',0)],dtype=ds.dtype)
+                
+        self.show_lattice_pbar = encode_kwargs.pop("show_lattice_pbar", False)
 
         self.encode_kwargs = encode_kwargs
 
@@ -227,6 +243,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         if not hasattr(self,"scores_for_prefix"):
             self.scores_for_prefix = defaultdict(lambda: None)
             self.scores_for_prefix[('','')] = 0.0
+        scores_to_update = set()
 
         q0 = 0
         lm_scores[q0] = 0.0
@@ -239,12 +256,14 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         final_states = set()
         arc_scores = fst.scores
 
-        pbar = tqdm(total=len(queue), position=0, leave=None, desc="Lattice traversal progress")
+        pbar = None
+        if self.show_lattice_pbar:
+            pbar = tqdm(total=len(queue), position=0, leave=None, desc="Lattice traversal progress")
         next_level = {}
         while len(queue) > 0:
             q,level = queue.pop(0)
             prefix = prefix_strings[q]
-            pbar.update(1)
+            if pbar is not None: pbar.update(1)
             outgoing = arcs[:,0] == q
 
             for arc_idx in torch.where(outgoing)[0]:
@@ -262,6 +281,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
                     #print("Cache miss for prefix:", prefix_in_new,", ",prefix_out_new)
                     #print("Queue size:", len(queue))
                     self.scores_for_prefix[(prefix,out_new)] = self.compute_log_probabilities(input_text,out_new,prefix)
+                    scores_to_update.add((prefix,out_new))
 
                 lm_score = self.scores_for_prefix[(prefix,out_new)]
 
@@ -278,15 +298,21 @@ class ProcessSequenceTokenizer(AbsTokenizer):
                 states, probs = tuple(zip(*next_level.items()))
                 beam_idxs = torch.topk(torch.tensor(probs),k=min(self.beam_size,len(probs)),sorted=True).indices
                 queue += [(states[i.item()],level+1) for i in beam_idxs]
-                pbar.total += beam_idxs.shape[0]
+                if pbar is not None: pbar.total += beam_idxs.shape[0]
                 next_level = {}
 
         #best_state = max(final_states, key=lambda x: lm_scores[x])
         q_final = torch.max(fst.arcs_as_tensor()[:,1]).item()
 
         if self.cache is not None:
-            with open(self.cache,"wb") as f:
-                pickle.dump(dict(self.scores_for_prefix),f)
+            # Append new entries to cache
+            with h5py.File(self.cache,'a') as f:
+                ds = f["scores"]
+                ds.resize((len(scores_to_update)+ds.shape[0],))
+                for i,(prefix,out) in enumerate(scores_to_update):
+                    score = self.scores_for_prefix[(prefix,out)].detach().cpu().numpy()
+                    new_entry = np.array([(prefix,out,score)],dtype=self.serialization_dtype)
+                    ds[-i-1] = new_entry
 
         return prefix_strings[q_final]
 
