@@ -1,5 +1,6 @@
 import argparse
 import h5py
+import json
 import re
 import k2
 import numpy as np
@@ -105,24 +106,38 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         self.keep_segmentation = encode_kwargs.pop("keep_segmentation", False)
         self.alpha = encode_kwargs.pop("alpha", 0.5)
 
-        self.cache = encode_kwargs.pop("scores_cache", None)
-        if self.cache is not None:
-            self.cache = Path(self.cache)
+        self.scores_cache = encode_kwargs.pop("scores_cache", None)
+        if self.scores_cache is not None:
+            self.scores_cache = Path(self.scores_cache)
             self.scores_for_prefix = defaultdict(lambda: None)
-            if self.cache.exists():
+            if self.scores_cache.exists():
                 try:
-                    with h5py.File(self.cache, "r") as f:
+                    with h5py.File(self.scores_cache, "r") as f:
                         ds = f["scores"]
                         self.scores_for_prefix.update({(key1.decode('utf-8'),key2.decode('utf-8')):value for key1,key2,value in ds})
                 except:
-                    with h5py.File(self.cache, "w") as f:
+                    with h5py.File(self.scores_cache, "w") as f:
                         ds = f.create_dataset("scores", shape=(1,), maxshape=(None,),dtype=self.serialization_dtype)
                         ds[0] = np.array([('','',0)],dtype=ds.dtype)
             else:
-                self.cache.parent.mkdir(parents=True,exist_ok=True)
-                with h5py.File(self.cache, "w") as f:
+                self.scores_cache.parent.mkdir(parents=True,exist_ok=True)
+                with h5py.File(self.scores_cache, "w") as f:
                     ds = f.create_dataset("scores", shape=(1,), maxshape=(None,),dtype=self.serialization_dtype)
                     ds[0] = np.array([('','',0)],dtype=ds.dtype)
+        
+        self.seg_cache = encode_kwargs.get("segmentation_cache", None)
+        if self.seg_cache is not None:
+            if Path.exists(self.seg_cache):
+                with open(self.seg_cache, "r", encoding="utf-8") as f:
+                    self.seg_cache_local = json.load(f)
+            else:
+                print(f"File not found: {self.seg_cache}. Creating it...")
+                self.seg_cache_local = {}
+                try:
+                    with open(self.seg_cache, "w", encoding="utf-8") as f:
+                        json.dump(self.seg_cache_local,f)
+                except:
+                    pass
                 
         self.show_lattice_pbar = encode_kwargs.pop("show_lattice_pbar", False)
 
@@ -131,7 +146,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
     def text2tokens(self, line : str) -> List[str]:
         # TODO pull in the FSTs
         print(f'Text: "{line}"')
-        if not self.keep_segmentation:
+        if not self.keep_segmentation and (self.seg_cache is None or line not in self.seg_cache_local):
             # Restricting to word-level segmentation should reduce computation time
             #recog = self.build_word2char_fst(line)
             fst_comp = self.build_acceptor_fst(line)
@@ -151,6 +166,13 @@ class ProcessSequenceTokenizer(AbsTokenizer):
             fst_comp = k2.remove_epsilon(fst_comp)
             fst_comp = k2.connect(fst_comp)
             line = self.find_best_tokenization(fst_comp,line)
+            if self.seg_cache is not None:
+                self.seg_cache_local[line] = line
+                with open(self.seg_cache, "w", encoding="utf-8") as f:
+                    json.dump(self.seg_cache_local,f)
+        elif not self.keep_segmentation:
+            line = self.seg_cache_local[line]
+        #print(f"Segmentation: {line}")
         
         # Final step: once segmentation is complete, convert to linearized format
         init = lambda x: re.sub(r"\{([1-4]*)>([1-4]*)\}\{([1-4]+)>([1-4]*)\}",r"{\1\3>\2\4}",x)
@@ -304,9 +326,9 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         #best_state = max(final_states, key=lambda x: lm_scores[x])
         q_final = torch.max(fst.arcs_as_tensor()[:,1]).item()
 
-        if self.cache is not None:
+        if self.scores_cache is not None and len(scores_to_update) > 0:
             # Append new entries to cache
-            with h5py.File(self.cache,'a') as f:
+            with h5py.File(self.scores_cache,'a') as f:
                 ds = f["scores"]
                 ds.resize((len(scores_to_update)+ds.shape[0],))
                 for i,(prefix,out) in enumerate(scores_to_update):
