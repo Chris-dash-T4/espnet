@@ -110,6 +110,11 @@ class LMTask(AbsTask):
             default=None,
             help="The model file fo sentencepiece",
         )
+        group.add_argument(
+            "--proc_seq_kwargs",
+            type=str,
+            help="Keyword arguments for procseq",
+        )
         parser.add_argument(
             "--non_linguistic_symbols",
             type=str_or_none,
@@ -157,6 +162,7 @@ class LMTask(AbsTask):
                 token_list=args.token_list,
                 bpemodel=args.bpemodel,
                 text_cleaner=args.cleaner,
+                proc_seq_kwargs=args.proc_seq_kwargs if 'procseq' in args.token_type else None,
                 g2p_type=args.g2p,
                 non_linguistic_symbols=args.non_linguistic_symbols,
             )

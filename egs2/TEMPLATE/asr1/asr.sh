@@ -1654,6 +1654,7 @@ if [ ${stage} -le 11 ] && [ ${stop_stage} -ge 11 ] && ! [[ " ${skip_stages} " =~
                 --ignore_init_mismatch ${ignore_init_mismatch} \
                 --fold_length "${_fold_length}" \
                 --output_dir "${asr_exp}" \
+                --proc_seq_kwargs "${procseq_kwargs}" \
                 ${_opts} ${asr_args}
                 # TODO append ProcSeq into this somehow
     fi
@@ -1740,7 +1741,10 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         elif "${use_maskctc}"; then
             inference_bin_tag="_maskctc"
         fi
-        if [ ${token_type} = "segmel" ] || [ ${token_type} = "segmel_bpe" ]; then
+        if [[ ${token_type} =~ "segmel".* ]]; then
+            _opts+="--prompt_token_file ${nlsyms_txt}"
+        fi
+        if [[ ${token_type} =~ "procseq".* ]]; then
             _opts+="--prompt_token_file ${nlsyms_txt}"
         fi
     fi

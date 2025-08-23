@@ -172,6 +172,8 @@ class CommonPreprocessor(AbsPreprocessor):
         # only use for whisper
         whisper_language: Optional[str] = None,
         whisper_task: Optional[str] = None,
+        # only use for procseq tokenizer
+        proc_seq_kwargs: Optional[str] = None,
     ):
         super().__init__(train)
         self.train = train
@@ -201,6 +203,7 @@ class CommonPreprocessor(AbsPreprocessor):
                 nonsplit_symbol=nonsplit_symbol,
                 whisper_language=whisper_language,
                 whisper_task=whisper_task,
+                proc_seq_kwargs=proc_seq_kwargs,
             )
             if token_type == "hugging_face":
                 self.token_id_converter = HuggingFaceTokenIDConverter(

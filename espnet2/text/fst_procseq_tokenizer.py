@@ -127,7 +127,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         
         self.seg_cache = encode_kwargs.get("segmentation_cache", None)
         if self.seg_cache is not None:
-            if Path.exists(self.seg_cache):
+            if Path(self.seg_cache).exists():
                 with open(self.seg_cache, "r", encoding="utf-8") as f:
                     self.seg_cache_local = json.load(f)
             else:

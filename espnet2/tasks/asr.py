@@ -328,6 +328,8 @@ class ASRTask(AbsTask):
                 "whisper_multilingual",
                 "segmel",
                 "segmel_bpe",
+                "procseq",
+                "procseq_bpe",
             ],
             help="The text will be tokenized " "in the specified level token",
         )
@@ -413,6 +415,11 @@ class ASRTask(AbsTask):
             default=[],
             help="Auxillary tasks to train on using CTC loss. ",
         )
+        group.add_argument(
+            "--proc_seq_kwargs",
+            type=str,
+            help="Keyword arguments for procseq",
+        )
 
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
@@ -447,6 +454,7 @@ class ASRTask(AbsTask):
                 train=train,
                 token_type=args.token_type,
                 token_list=args.token_list,
+                proc_seq_kwargs=args.proc_seq_kwargs if 'procseq' in args.token_type else None,
                 bpemodel=args.bpemodel,
                 non_linguistic_symbols=args.non_linguistic_symbols,
                 text_cleaner=args.cleaner,
