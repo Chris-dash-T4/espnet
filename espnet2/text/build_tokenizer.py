@@ -113,7 +113,10 @@ def build_tokenizer(
     elif token_type == "procseq":
         kwargs = dict()
         if proc_seq_kwargs is not None:
+            print(f'Raw kwargs: "{proc_seq_kwargs}"')
             kwargs = procseq_kwargs_to_dict(proc_seq_kwargs)
+        else:
+            raise ValueError("i need kwargs ya freakin' moron")
         return ProcessSequenceTokenizer(
             delimiter=delimiter,
             non_linguistic_symbols=non_linguistic_symbols,

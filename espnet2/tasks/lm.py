@@ -156,6 +156,7 @@ class LMTask(AbsTask):
         cls, args: argparse.Namespace, train: bool
     ) -> Optional[Callable[[str, Dict[str, np.array]], Dict[str, np.ndarray]]]:
         if args.use_preprocessor:
+            print(args.token_type,args.proc_seq_kwargs)
             retval = CommonPreprocessor(
                 train=train,
                 token_type=args.token_type,

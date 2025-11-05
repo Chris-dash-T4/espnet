@@ -496,6 +496,9 @@ if [ -z "${lm_tag}" ]; then
     elif [ "${lm_token_type}" != "${token_type}" ]; then
         lm_tag+="_${token_type}"
     fi
+    if [ "${lm_token_type}" = hugging_face ]; then
+        lm_tag+="_"${hugging_face_model_name_or_path/\//-}
+    fi
     # Add overwritten arg's info
     if [ -n "${lm_args}" ]; then
         lm_tag+="$(echo "${lm_args}" | sed -e "s/--/\_/g" -e "s/[ |=/]//g")"
@@ -1062,7 +1065,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
 
         # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
         # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
-        ${python} -m espnet2.bin.tokenize_text  \
+        ${python} -u -m espnet2.bin.tokenize_text  \
             --token_type "${token_type}" \
             --input "${data_feats}/lm_train.txt" --output "${token_list}" ${_opts} \
             --proc_seq_kwargs "${procseq_kwargs}" \
@@ -1103,7 +1106,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ] && ! [[ " ${skip_stages} " =~ [
         # The first symbol in token_list must be "<blank>" and the last must be also sos/eos:
         # 0 is reserved for CTC-blank for ASR and also used as ignore-index in the other task
         ${python} -m espnet2.bin.tokenize_text  \
-            --token_type "segmel" \
+            --token_type "procseq" \
             --input "${data_feats}/lm_train.txt" --output "${token_list}.midpoint" ${_opts} \
             --proc_seq_kwargs "${procseq_kwargs}" \
             --field 2- \
@@ -1236,6 +1239,7 @@ if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ] && ! [[ " ${skip_stages} " =~ [
             --token_type "${lm_token_type}"\
             --token_list "${lm_token_list}" \
             --non_linguistic_symbols "${nlsyms_txt}" \
+            --proc_seq_kwargs "${procseq_kwargs}" \
             --cleaner "${cleaner}" \
             --g2p "${g2p}" \
             --train_data_path_and_name_and_type "${data_feats}/lm_train.txt,text,text" \
@@ -1328,6 +1332,7 @@ if [ ${stage} -le 7 ] && [ ${stop_stage} -ge 7 ] && ! [[ " ${skip_stages} " =~ [
             --token_type "${lm_token_type}"\
             --token_list "${lm_token_list}" \
             --non_linguistic_symbols "${nlsyms_txt}" \
+            --proc_seq_kwargs "${procseq_kwargs}" \
             --cleaner "${cleaner}" \
             --g2p "${g2p}" \
             --valid_data_path_and_name_and_type "${lm_dev_text},text,text" \
@@ -1452,6 +1457,7 @@ if [ ${stage} -le 10 ] && [ ${stop_stage} -ge 10 ] && ! [[ " ${skip_stages} " =~
             --bpemodel "${bpemodel}" \
             --token_type "${token_type}" \
             --token_list "${token_list}" \
+            --proc_seq_kwargs "${procseq_kwargs}" \
             --non_linguistic_symbols "${nlsyms_txt}" \
             --cleaner "${cleaner}" \
             --g2p "${g2p}" \
@@ -1805,6 +1811,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
                 --asr_train_config "${asr_exp}"/config.yaml \
                 --asr_model_file "${asr_exp}"/"${inference_asr_model}" \
                 --output_dir "${_logdir}"/output.JOB \
+                --proc_seq_kwargs "${procseq_kwargs}" \
                 ${_opts} ${inference_args} || { cat $(grep -l -i error "${_logdir}"/asr_inference.*.log) ; exit 1; }
 
         # 3. Calculate and report RTF based on decoding logs
@@ -1898,7 +1905,7 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
                             ${_opts} \
                             ) \
                     <(<"${_data}/utt2spk" awk '{ print "(" $2 "-" $1 ")" }') \
-                        >"${_scoredir}/ref${suffix:-${suffix}}.trn"
+                        >"${_scoredir}/ref${suffix}.trn"
 
                 # NOTE(kamo): Don't use cleaner for hyp
                 paste \
@@ -1909,7 +1916,7 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
                             --cleaner "${hyp_cleaner}" \
                             ) \
                     <(<"${_data}/utt2spk" awk '{ print "(" $2 "-" $1 ")" }') \
-                        >"${_scoredir}/hyp${suffix:-${suffix}}.trn"
+                        >"${_scoredir}/hyp${suffix}.trn"
 
             done
 

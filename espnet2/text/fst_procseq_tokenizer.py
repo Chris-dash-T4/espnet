@@ -55,6 +55,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         self.remove_non_linguistic_symbols = remove_non_linguistic_symbols
 
         # TODO set a default token list file
+        print("Kwargs processed:", encode_kwargs)
         self.tokenlist = encode_kwargs.pop("tokenlist", "tokenlist.txt")
         if self.tokenlist is not None:
             try:
@@ -124,7 +125,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
                 with h5py.File(self.scores_cache, "w") as f:
                     ds = f.create_dataset("scores", shape=(1,), maxshape=(None,),dtype=self.serialization_dtype)
                     ds[0] = np.array([('','',0)],dtype=ds.dtype)
-        
+
         self.seg_cache = encode_kwargs.get("segmentation_cache", None)
         if self.seg_cache is not None:
             if Path(self.seg_cache).exists():
@@ -138,17 +139,17 @@ class ProcessSequenceTokenizer(AbsTokenizer):
                         json.dump(self.seg_cache_local,f)
                 except:
                     pass
-                
+
         self.show_lattice_pbar = encode_kwargs.pop("show_lattice_pbar", False)
 
         self.encode_kwargs = encode_kwargs
 
     def text2tokens(self, line : str) -> List[str]:
-        # TODO pull in the FSTs
-        print(f'Text: "{line}"')
-        if not self.keep_segmentation and (self.seg_cache is None or line not in self.seg_cache_local):
+        #print(f'Text: "{line}"')
+        if not self.keep_segmentation and (self.seg_cache is None or line.upper() not in self.seg_cache_local):
             # Restricting to word-level segmentation should reduce computation time
             #recog = self.build_word2char_fst(line)
+            print("Local not found")
             fst_comp = self.build_acceptor_fst(line)
             fst_comp = k2.compose(fst_comp,self.punctuation_processor)
             fst_comp = k2.compose(fst_comp,self.preprocessor)
@@ -165,15 +166,16 @@ class ProcessSequenceTokenizer(AbsTokenizer):
             fst_comp = k2.connect(fst_comp)
             fst_comp = k2.remove_epsilon(fst_comp)
             fst_comp = k2.connect(fst_comp)
-            line = self.find_best_tokenization(fst_comp,line)
+            line_new = self.find_best_tokenization(fst_comp,line)
             if self.seg_cache is not None:
-                self.seg_cache_local[line] = line
+                self.seg_cache_local[line.upper()] = line_new
                 with open(self.seg_cache, "w", encoding="utf-8") as f:
                     json.dump(self.seg_cache_local,f)
+            line = line_new
         elif not self.keep_segmentation:
-            line = self.seg_cache_local[line]
+            line = self.seg_cache_local[line.upper()].lower()
         #print(f"Segmentation: {line}")
-        
+
         # Final step: once segmentation is complete, convert to linearized format
         init = lambda x: re.sub(r"\{([1-4]*)>([1-4]*)\}\{([1-4]+)>([1-4]*)\}",r"{\1\3>\2\4}",x)
         first = lambda x: re.sub(r"^([a-zñ']+)([1-4]*)\{([1-4]*)(>1)?>([1-4]*)\}([1-4]*)(.*)",r'\1\2\3\6\7 \2\3\6\4>\2\5\6',re.sub(r"^([a-zñ']+)([1-4]+)($|[^{1-4].*)",r'\1{\2>\2}\3',x))
@@ -182,7 +184,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
         fourth = lambda x: re.sub(r"^([a-zñ']+[1-4]+[a-zñ']+[1-4]+[a-zñ']+[1-4]+)([a-zñ']+)([1-4]*)\{([1-4]*)(>1)?>([1-4]*)\}([1-4]*)(.*)",r'\1\2\3\4\7\8 \3\4\7\5>\3\6\7',re.sub(r"^([a-zñ']+[1-4]+[a-zñ']+[1-4]+[a-zñ']+[1-4]+)([a-zñ']+)([1-4]+)($|[^{1-4].*)",r'\1\2{\3>\3}\4',x))
         linear_all = lambda x: fourth(third(second(first(init(x)))))
         return [token.upper() for word in line.split(' ') for token in linear_all(word).split(' ')]
-    
+
     def tokens2text(self, tokens : Iterable[str]) -> str:
         res = ' '.join(tokens)
         for match_ in re.finditer(r"=?([A-ZÑÁÉÍÓÚÜ']+[0-9]+)+-?(\s[1-4]+>(1>)?[1-4]+)+",res):
@@ -377,7 +379,7 @@ class ProcessSequenceTokenizer(AbsTokenizer):
             builder.append(f"1 2 {self.tokens['<space>']} {self.tokens['<space>']} 0")
             builder.append(f"1 4 -1 -1 0")
             builder.append(f"1 3 {self.tokens['-']} {self.tokens['-']} 0") # dashes only get final spacing
-            builder += [f"2 3 {self.tokens[c]} {self.tokens[c]} 0" for c in self.non_linguistic_symbols]
+            builder += [f"2 3 {self.tokens[c]} {self.tokens[c]} 0" for c in self.non_linguistic_symbols if c in self.tokens]
             builder.append(f"2 1 {self.tokens['=']} {self.tokens['=']} 0") # enclitics only get initial spacing
             builder.append(f"3 1 {self.tokens['<eps>']} {self.tokens['<space>']} -1")
             builder.append(f"3 1 {self.tokens['<space>']} {self.tokens['<space>']} 0")
@@ -424,10 +426,14 @@ def procseq_kwargs_to_dict(kwargs_as_str : str) -> dict:
     parser.add_argument("--tokenlist", type=str, required=True)
     parser.add_argument("--segmentation_fst", type=str, required=True)
     parser.add_argument("--preproc_fst", type=str)
-    parser.add_argument("--segmentation_lm", type=str, required=True)
+    parser.add_argument("--segmentation_lm", type=str)
     parser.add_argument("--beam_size", type=int, default=3)
     parser.add_argument("--keep_segmentation", type=bool, default=False)
+    parser.add_argument("--show_lattice_pbar", type=bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.5, help="Alpha for LM weight (0.0: only FST, 1.0: only LM)")
     parser.add_argument("--scores_cache", type=str)
-    args = parser.parse_known_args(kwargs_as_str.split())
+    parser.add_argument("--segmentation_cache", type=str)
+    args, unrecognized = parser.parse_known_args(kwargs_as_str.split())
+    print("Unknown options:",unrecognized)
+    print(f"Parsed args: {args}")
     return vars(args)

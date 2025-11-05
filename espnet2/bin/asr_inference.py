@@ -126,6 +126,7 @@ class Speech2Text:
         threshold_probability: float = 0.99,
         max_seq_len: int = 5,
         max_mask_parallel: int = -1,
+        proc_seq_kwargs: Optional[str] = None,
     ):
 
         task = ASRTask if not enh_s2t_task else EnhS2TTask
@@ -440,14 +441,14 @@ class Speech2Text:
             tokenizer = build_tokenizer(
                 token_type=token_type,
                 non_linguistic_symbols=prompt_token_file,
-                proc_seq_kwargs=whisper_task,
+                proc_seq_kwargs=proc_seq_kwargs,
             )
         elif token_type == "procseq_bpe":
             tokenizer = build_tokenizer(
                 token_type=token_type,
                 non_linguistic_symbols=prompt_token_file,
                 bpemodel=bpemodel,
-                proc_seq_kwargs=whisper_task,
+                proc_seq_kwargs=proc_seq_kwargs,
             )
         else:
             tokenizer = build_tokenizer(token_type=token_type)
@@ -719,6 +720,7 @@ class Speech2Text:
             Speech2Text: Speech2Text instance.
 
         """
+        dbg_prevkwargs = kwargs.copy()
         if model_tag is not None:
             try:
                 from espnet_model_zoo.downloader import ModelDownloader
@@ -731,6 +733,8 @@ class Speech2Text:
                 raise
             d = ModelDownloader()
             kwargs.update(**d.download_and_unpack(model_tag))
+            if dbg_prevkwargs['proc_seq_kwargs'] is not None and kwargs['proc_seq_kwargs'] is None:
+                raise ValueError('woc')
 
         return Speech2Text(**kwargs)
 
@@ -784,6 +788,7 @@ def inference(
     threshold_probability: float,
     max_seq_len: int,
     max_mask_parallel: int,
+    proc_seq_kwargs: Optional[str] = None,
 ):
     if batch_size > 1:
         raise NotImplementedError("batch decoding is not implemented")
@@ -843,6 +848,7 @@ def inference(
         threshold_probability=threshold_probability,
         max_seq_len=max_seq_len,
         max_mask_parallel=max_mask_parallel,
+        proc_seq_kwargs=proc_seq_kwargs,
     )
     speech2text = Speech2Text.from_pretrained(
         model_tag=model_tag,
@@ -1134,6 +1140,13 @@ def get_parser():
         "If not given, refers from the training args",
     )
     group.add_argument(
+        "--proc_seq_kwargs",
+        type=str_or_none,
+        default=None,
+        help="Keyword args for process sequence tokenizer. "
+        "If not given, refers from the training args",
+    )
+    group.add_argument(
         "--time_sync",
         type=str2bool,
         default=False,
@@ -1200,6 +1213,7 @@ def main(cmd=None):
     parser = get_parser()
     args = parser.parse_args(cmd)
     kwargs = vars(args)
+    print("Le kwargs:",kwargs['proc_seq_kwargs'])
     kwargs.pop("config", None)
     inference(**kwargs)
 
